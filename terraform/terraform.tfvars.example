@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+# Find both values in Snowsight: bottom-left account menu -> "Connect a tool to Snowflake"
+# (account identifier has the form <organization_name>-<account_name>).
+
+snowflake_organization_name = "ABCDEFG"
+snowflake_account_name      = "XY12345"
