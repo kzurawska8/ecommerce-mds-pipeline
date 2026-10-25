@@ -1,0 +1,16 @@
+# Only pyproject.toml, uv.lock and src/ are needed to build the image.
+# Secrets must never end up in the build context.
+keys/
+.env
+*.p8
+*.pem
+
+.git/
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+terraform/
+tests/
+scripts/
+README.md

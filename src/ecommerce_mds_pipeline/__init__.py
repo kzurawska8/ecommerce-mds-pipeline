@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from ecommerce-mds-pipeline!")
+"""E-commerce Modern Data Stack pipeline: ingestion from DummyJSON into Snowflake."""

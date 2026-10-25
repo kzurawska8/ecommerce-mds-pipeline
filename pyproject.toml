@@ -6,11 +6,30 @@ authors = [
     { name = "kzurawska8", email = "karolina.zurawska88@gmail.com" }
 ]
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "requests>=2.34,<3",
+    "snowflake-connector-python>=5.1,<6",
+]
 
 [project.scripts]
-ecommerce-mds-pipeline = "ecommerce_mds_pipeline:main"
+ingest = "ecommerce_mds_pipeline.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
