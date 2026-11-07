@@ -37,8 +37,9 @@ resource "snowflake_grant_privileges_to_account_role" "loader_raw_schema" {
   provider = snowflake.securityadmin
 
   account_role_name = local.all_roles["LOADER_ROLE"]
-  # CREATE STAGE / FILE FORMAT are needed for bulk loading (PUT + COPY INTO).
-  privileges = ["USAGE", "CREATE TABLE", "CREATE STAGE", "CREATE FILE FORMAT"]
+  # CREATE TABLE is enough for bulk loading: PUT + COPY INTO go through each
+  # table's own stage (@%TABLE), which comes with table ownership.
+  privileges = ["USAGE", "CREATE TABLE"]
   on_schema {
     schema_name = snowflake_schema.raw.fully_qualified_name
   }
