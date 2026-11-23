@@ -23,6 +23,9 @@ RUN uv sync --locked --no-default-groups --no-editable
 # --- Runtime stage: just Python + the virtualenv, running as non-root --------
 FROM python:3.12-slim
 
+# Links the image on GHCR to this repository (permissions, repo page).
+LABEL org.opencontainers.image.source="https://github.com/kzurawska8/ecommerce-mds-pipeline"
+
 RUN useradd --create-home --uid 1000 app
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv

@@ -1,0 +1,11 @@
+# Actions are pinned to commit SHAs; Dependabot keeps those pins current
+# with one grouped PR a month, which CI then checks.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -22,6 +22,7 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.2",
+    "sqlfluff>=4,<5",
 ]
 # Transformations. Kept out of the project dependencies so the ingestion
 # image stays small; installed locally and in CI via default-groups.

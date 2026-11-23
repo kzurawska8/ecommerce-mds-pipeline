@@ -1,0 +1,100 @@
+# Production pipeline: ingest DummyJSON into RAW, then build and test the
+# prod dbt project. Uses the image CI published from main, so what runs here
+# is exactly what was tested.
+name: daily
+
+on:
+  workflow_dispatch:
+  # The schedule is off: the Snowflake trial account behind this project has
+  # ended, so the workflow was run manually to verify it. In production this
+  # would run daily:
+  # schedule:
+  #   - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+  packages: read
+
+# Never run two pipelines at once; a second run waits for the first.
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Secrets live in the "production" environment, which only main can use.
+    environment: production
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}:latest
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      DBT_PROJECT_DIR: dbt
+      DBT_PROFILES_DIR: dbt
+      DBT_TARGET: prod
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Keys are stored as secrets (still passphrase-encrypted) and only ever
+      # exist as files in this job's temp dir, which is wiped with the runner.
+      - name: Write private keys
+        env:
+          LOADER_PRIVATE_KEY: ${{ secrets.LOADER_PRIVATE_KEY }}
+          DBT_PRIVATE_KEY: ${{ secrets.DBT_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$LOADER_PRIVATE_KEY" > "$RUNNER_TEMP/loader.p8"
+          printf '%s\n' "$DBT_PRIVATE_KEY" > "$RUNNER_TEMP/dbt.p8"
+          chmod 600 "$RUNNER_TEMP/dbt.p8"
+          # The container runs as uid 1000, the runner user is a different
+          # uid, so a 600 file would be unreadable inside the container. The
+          # runner is a single-use VM, and the key is useless without its
+          # passphrase.
+          chmod 644 "$RUNNER_TEMP/loader.p8"
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ingest
+        env:
+          SNOWFLAKE_PRIVATE_KEY_FILE_PWD: ${{ secrets.LOADER_PRIVATE_KEY_PASSPHRASE }}
+        run: |
+          docker run --rm \
+            -e SNOWFLAKE_ACCOUNT \
+            -e SNOWFLAKE_PRIVATE_KEY_FILE=/secrets/loader.p8 \
+            -e SNOWFLAKE_PRIVATE_KEY_FILE_PWD \
+            -v "$RUNNER_TEMP/loader.p8:/secrets/loader.p8:ro" \
+            "$IMAGE"
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.5"
+
+      - name: Install dbt
+        run: uv sync --locked --only-group dbt
+
+      - name: dbt build (prod)
+        env:
+          DBT_SNOWFLAKE_PRIVATE_KEY_PATH: ${{ runner.temp }}/dbt.p8
+          DBT_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.DBT_PRIVATE_KEY_PASSPHRASE }}
+        run: |
+          uv run --no-sync dbt deps
+          uv run --no-sync dbt source freshness
+          uv run --no-sync dbt build
+          uv run --no-sync dbt docs generate --static
+
+      # Run results, manifest and docs from this run, for inspection. Not
+      # dbt.log: it contains the account identifier, and GitHub masks secrets
+      # only in the console output, not inside uploaded files.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: dbt-artifacts
+          path: |
+            dbt/target/run_results.json
+            dbt/target/sources.json
+            dbt/target/manifest.json
+            dbt/target/static_index.html
+          if-no-files-found: ignore
