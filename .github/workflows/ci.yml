@@ -1,0 +1,109 @@
+# Checks on every PR and every push to main. None of them need Snowflake,
+# so CI keeps working after the trial account behind this project has ended.
+# On main, a green run also publishes the ingestion image to GHCR.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to the same branch makes the previous run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python (ruff, pytest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.5"
+      - run: uv sync --locked --no-group dbt
+      - run: uv run --no-sync ruff check
+      - run: uv run --no-sync ruff format --check
+      - run: uv run --no-sync pytest
+
+  terraform:
+    name: terraform (fmt, validate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.17.0"
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      # No backend: validate checks the configuration, not real infrastructure.
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  dbt:
+    name: dbt (sqlfluff, compile)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DBT_PROJECT_DIR: dbt
+      DBT_PROFILES_DIR: dbt
+      # Placeholders: the profile needs values to render, but nothing here
+      # connects. compile --no-introspect renders all SQL without a warehouse.
+      SNOWFLAKE_ACCOUNT: ci-placeholder
+      DBT_SNOWFLAKE_PRIVATE_KEY_PATH: /nonexistent.p8
+      DBT_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: placeholder
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.5"
+      - run: uv sync --locked --only-group dev --only-group dbt
+      - run: uv run --no-sync sqlfluff lint dbt/models dbt/tests
+      - run: uv run --no-sync dbt deps
+      - run: uv run --no-sync dbt compile --no-introspect --no-populate-cache
+
+  docker:
+    name: docker (build, dry run)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -t ecommerce-ingest:ci .
+      # Extracts from the live API, skips Snowflake.
+      - run: docker run --rm ecommerce-ingest:ci --dry-run
+
+  # Only after every check passed, and only for main: the daily workflow
+  # always runs an image built from a commit that went through CI.
+  publish:
+    name: publish image (GHCR)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python, terraform, dbt, docker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Tagged with the commit SHA (traceable, immutable) and latest (what
+      # the daily workflow pulls).
+      - run: |
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
