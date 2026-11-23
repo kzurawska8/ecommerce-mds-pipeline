@@ -23,6 +23,15 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.2",
 ]
+# Transformations. Kept out of the project dependencies so the ingestion
+# image stays small; installed locally and in CI via default-groups.
+dbt = [
+    "dbt-core>=1.12,<1.13",
+    "dbt-snowflake>=1.12,<1.13",
+]
+
+[tool.uv]
+default-groups = ["dev", "dbt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

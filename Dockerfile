@@ -10,14 +10,15 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Dependencies first, in their own layer: rebuilt only when the lockfile
-# changes, not on every source edit.
+# changes, not on every source edit. --no-default-groups: runtime deps only,
+# no dev tools and no dbt (that runs elsewhere).
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-default-groups --no-install-project
 
 # Then the project itself, installed as a regular (non-editable) package so
 # the runtime image needs only the virtualenv, not the source tree.
 COPY src ./src
-RUN uv sync --locked --no-dev --no-editable
+RUN uv sync --locked --no-default-groups --no-editable
 
 # --- Runtime stage: just Python + the virtualenv, running as non-root --------
 FROM python:3.12-slim
