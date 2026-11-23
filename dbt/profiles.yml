@@ -1,0 +1,24 @@
+# Connection profile. Everything secret or account-specific comes from
+# environment variables, so this file is safe to commit.
+ecommerce:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev: &snowflake
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: DBT_USER
+      # Key-pair auth, same as the loader. The path must be absolute: some dbt
+      # commands (build, run) change into the project dir first, others (debug)
+      # don't, so a relative path would resolve differently between them.
+      private_key_path: "{{ env_var('DBT_SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('DBT_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE') }}"
+      role: TRANSFORMER_ROLE
+      warehouse: ECOMMERCE_WH
+      database: ECOMMERCE_DB
+      # Prefix for every schema this target builds (see generate_schema_name).
+      schema: DEV
+      threads: 4
+      query_tag: ecommerce-mds-pipeline:dbt
+    prod:
+      <<: *snowflake
+      schema: PROD

@@ -1,0 +1,176 @@
+# Marts are the public interface, so each one has an enforced contract: the
+# build fails before replacing the table if a column's name or type drifts.
+# Snowflake doesn't enforce primary keys, so uniqueness is also a data test.
+
+models:
+  - name: dim_products
+    description: One row per product, current state.
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: product_id
+        data_type: number
+        constraints: [{type: not_null}, {type: primary_key}]
+        data_tests: [unique]
+      - name: sku
+        data_type: varchar
+      - name: title
+        data_type: varchar
+      - name: category
+        data_type: varchar
+        data_tests: [not_null]
+      - name: brand
+        data_type: varchar
+        description: Null for products without a brand.
+      - name: price
+        data_type: number(12, 2)
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: discount_percentage
+        data_type: number(5, 2)
+      - name: rating
+        data_type: number(3, 2)
+      - name: stock
+        data_type: number
+      - name: availability_status
+        data_type: varchar
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [In Stock, Low Stock, Out of Stock]
+      - name: created_at
+        data_type: timestamp_tz
+      - name: updated_at
+        data_type: timestamp_tz
+
+  - name: dim_users
+    description: >
+      One row per user, current state. Pseudonymous: identified by user_id
+      only, with no names, contact details or financial identifiers.
+    config:
+      contract: {enforced: true}
+    columns:
+      - name: user_id
+        data_type: number
+        constraints: [{type: not_null}, {type: primary_key}]
+        data_tests: [unique]
+      - name: age
+        data_type: number
+      - name: gender
+        data_type: varchar
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [female, male]
+      - name: user_role
+        data_type: varchar
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [user, moderator, admin]
+      - name: city
+        data_type: varchar
+      - name: state
+        data_type: varchar
+      - name: country
+        data_type: varchar
+      - name: university
+        data_type: varchar
+      - name: company_department
+        data_type: varchar
+      - name: job_title
+        data_type: varchar
+
+  - name: fct_orders
+    description: One row per order (a DummyJSON cart).
+    config:
+      contract: {enforced: true}
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "net_amount <= gross_amount"
+    columns:
+      - name: order_id
+        data_type: number
+        constraints: [{type: not_null}, {type: primary_key}]
+        data_tests: [unique]
+      - name: user_id
+        data_type: number
+        constraints: [{type: not_null}]
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_users')
+                field: user_id
+      - name: first_seen_at
+        data_type: timestamp_tz
+        description: >
+          When the pipeline first loaded this order. The source has no order
+          date, so this is the closest honest substitute - not a purchase time.
+      - name: line_count
+        data_type: number
+      - name: item_quantity
+        data_type: number
+      - name: gross_amount
+        data_type: number(12, 2)
+        description: Order value before discounts.
+      - name: net_amount
+        data_type: number(12, 2)
+        description: Order value after discounts.
+      - name: discount_amount
+        data_type: number(12, 2)
+
+  - name: fct_order_items
+    description: One row per order line. An order can list the same product on several lines.
+    config:
+      contract: {enforced: true}
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "net_amount <= gross_amount"
+    columns:
+      - name: order_item_id
+        data_type: varchar(32)
+        description: Surrogate key, hash of (order_id, line_number).
+        constraints: [{type: not_null}, {type: primary_key}]
+        data_tests: [unique]
+      - name: order_id
+        data_type: number
+        constraints: [{type: not_null}]
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_id
+      - name: line_number
+        data_type: number
+        constraints: [{type: not_null}]
+      - name: product_id
+        data_type: number
+        constraints: [{type: not_null}]
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: user_id
+        data_type: number
+      - name: first_seen_at
+        data_type: timestamp_tz
+      - name: quantity
+        data_type: number
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 1}
+      - name: unit_price
+        data_type: number(12, 2)
+      - name: discount_percentage
+        data_type: number(5, 2)
+      - name: gross_amount
+        data_type: number(12, 2)
+      - name: net_amount
+        data_type: number(12, 2)
+      - name: discount_amount
+        data_type: number(12, 2)

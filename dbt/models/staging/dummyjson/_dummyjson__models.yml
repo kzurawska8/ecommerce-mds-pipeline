@@ -1,0 +1,59 @@
+models:
+  - name: stg_dummyjson__products
+    description: Current products (latest batch), typed and renamed.
+    columns:
+      - name: product_id
+        data_tests: [unique, not_null]
+
+  - name: stg_dummyjson__users
+    description: Current users (latest batch), non-identifying attributes only.
+    columns:
+      - name: user_id
+        data_tests: [unique, not_null]
+
+  - name: stg_dummyjson__carts
+    description: Current carts (latest batch), header level.
+    columns:
+      - name: cart_id
+        data_tests: [unique, not_null]
+      - name: first_seen_at
+        description: When the pipeline first loaded this cart. Stands in for an order date.
+        data_tests: [not_null]
+
+  - name: stg_dummyjson__cart_items
+    description: Current cart lines (latest batch), one row per element of PAYLOAD:products.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cart_id, line_number]
+    columns:
+      - name: cart_id
+        data_tests: [not_null]
+      - name: product_id
+        data_tests: [not_null]
+
+unit_tests:
+  # The rule every staging model depends on: only the latest batch counts.
+  # Product 3 exists only in the older batch, i.e. it was deleted at the source.
+  - name: test_latest_batch_wins_and_drops_deleted_records
+    model: stg_dummyjson__products
+    given:
+      - input: source('dummyjson', 'products')
+        format: sql
+        rows: |
+          select parse_json('{"id": 1, "title": "Old title", "price": 10}') as payload,
+                 'dummyjson/products' as _source, 'b1' as _batch_id,
+                 '2026-10-01 00:00:00 +00:00'::timestamp_tz as _loaded_at
+          union all
+          select parse_json('{"id": 3, "title": "Deleted later", "price": 5}'),
+                 'dummyjson/products', 'b1', '2026-10-01 00:00:00 +00:00'::timestamp_tz
+          union all
+          select parse_json('{"id": 1, "title": "New title", "price": 12.5}'),
+                 'dummyjson/products', 'b2', '2026-10-02 00:00:00 +00:00'::timestamp_tz
+          union all
+          select parse_json('{"id": 2, "title": "Added later", "price": 7}'),
+                 'dummyjson/products', 'b2', '2026-10-02 00:00:00 +00:00'::timestamp_tz
+    expect:
+      rows:
+        - {product_id: 1, title: New title, price: 12.50, _batch_id: b2}
+        - {product_id: 2, title: Added later, price: 7.00, _batch_id: b2}

@@ -1,0 +1,30 @@
+name: ecommerce
+version: "1.0.0"
+profile: ecommerce
+require-dbt-version: [">=1.12.0", "<2.0.0"]
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+models:
+  ecommerce:
+    # Staging: one view per source table, cheap to rebuild and always current.
+    staging:
+      +schema: staging
+      +materialized: view
+    # Marts: tables, because they are what people query.
+    marts:
+      +schema: marts
+      +materialized: table
+      # Only prod marts are shared with reporting; dev schemas stay private.
+      +grants:
+        select: "{{ ['REPORTER_ROLE'] if target.name == 'prod' else [] }}"
+
+on-run-end:
+  - "{{ grant_marts_schema_usage('REPORTER_ROLE') }}"

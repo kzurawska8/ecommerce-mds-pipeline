@@ -1,0 +1,15 @@
+# SCD type 2 history of product price and stock. Each change closes the old
+# row (dbt_valid_to) and opens a new one, so "what did this cost on date X?"
+# stays answerable even though staging only shows the current state.
+# DummyJSON is static, so in practice this will hold one version per product;
+# the mechanism is what matters.
+snapshots:
+  - name: snap_products
+    relation: ref('stg_dummyjson__products')
+    config:
+      schema: snapshots
+      unique_key: product_id
+      strategy: check
+      check_cols: [price, discount_percentage, stock]
+      # A product missing from the latest batch gets its current row closed.
+      hard_deletes: invalidate
