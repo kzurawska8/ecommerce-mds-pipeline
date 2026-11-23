@@ -1,0 +1,40 @@
+# SQL lint for the dbt project. The jinja templater (with dbt builtins such
+# as ref/source stubbed) works offline, so CI lints without Snowflake access.
+[sqlfluff]
+dialect = snowflake
+templater = jinja
+max_line_length = 100
+# ST06 wants calculated columns after plain ones, which would push keys like
+# cart_id below the metadata columns. Key first reads better.
+exclude_rules = structure.column_order
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+load_macros_from_path = dbt/macros
+# Stubs for package macros (dbt_utils), which aren't installed in lint jobs.
+library_path = dbt/sqlfluff_stubs
+
+[sqlfluff:indentation]
+tab_space_size = 4
+
+# Column aliases are aligned within each SELECT, for readability.
+[sqlfluff:layout:type:alias_expression]
+spacing_before = align
+align_within = select_clause
+align_scope = bracketed
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = lower
+
+# "title" is the API's field name and a published mart column.
+[sqlfluff:rules:references.keywords]
+ignore_words = title
